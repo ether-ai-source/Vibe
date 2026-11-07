@@ -6,13 +6,14 @@ plugins {
 android {
     namespace = "com.vibe.tv"
     compileSdk = 34
+    buildToolsVersion = "34.0.0"
 
     defaultConfig {
         applicationId = "com.vibe.tv"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0-firetv"
+        versionCode = 2
+        versionName = "1.1.0"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
@@ -21,7 +22,7 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            // Uses standard Android debug keystore for zero-config sideloading on Fire TV
+            // Standard Android debug key so Release APK installs directly on Fire TV
         }
     }
 
@@ -29,7 +30,6 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Signed with debug key so the Release APK from GitHub Actions installs directly on Fire TV
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -70,10 +70,8 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Low-latency HTTP engine (configured with zero disk cache)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Media3 ExoPlayer (HLS, DASH, Progressive, OkHttp DataSource)
     val media3Version = "1.3.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")

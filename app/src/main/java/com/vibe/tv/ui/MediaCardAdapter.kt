@@ -27,8 +27,7 @@ class MediaCardAdapter(
     }
 
     override fun onBindViewHolder(holder: CardViewHolder, position: Int) {
-        val item = items[position]
-        holder.bind(item, onItemClick)
+        holder.bind(items[position], onItemClick)
     }
 
     override fun getItemCount(): Int = items.size
@@ -45,13 +44,13 @@ class MediaCardAdapter(
             tvTitle.text = item.title
             tvSubtitle.text = item.subtitle
 
-            // Smooth 10-foot Fire TV D-Pad focus scale animation
             itemView.setOnFocusChangeListener { v, hasFocus ->
-                val scale = if (hasFocus) 1.04f else 1.0f
+                val scale = if (hasFocus) 1.05f else 1.0f
+                v. elevation = if (hasFocus) 12f else 0f
                 v.animate()
                     .scaleX(scale)
                     .scaleY(scale)
-                    .setDuration(130)
+                    .setDuration(120)
                     .start()
             }
 

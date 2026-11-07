@@ -31,13 +31,6 @@ import com.vibe.tv.core.LowLatencyHttp
 import com.vibe.tv.core.ZeroCacheJanitor
 import java.util.Locale
 
-/**
- * Fire TV Optimized Ultra-Low-Latency ExoPlayer Activity.
- * - Uses strictly RAM-buffered OkHttpDataSource (zero disk cache)
- * - 600ms startup buffer for near-instant video start
- * - 0ms back-buffer so watched video frames are immediately freed from RAM
- * - Sweeps all cache directories the moment playback stops
- */
 @OptIn(UnstableApi::class)
 class PlayerActivity : AppCompatActivity() {
 
@@ -48,6 +41,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var tvPlayerTitle: TextView
     private lateinit var tvPlayerStats: TextView
     private lateinit var btnOsdPlayPause: Button
+    private lateinit var btnOsdRew: Button
+    private lateinit var btnOsdFfwd: Button
     private lateinit var btnOsdSwitchSource: Button
     private lateinit var btnOsdAspect: Button
     private lateinit var tvPosition: TextView
@@ -59,7 +54,7 @@ class PlayerActivity : AppCompatActivity() {
     private var streamNames: List<String> = emptyList()
     private var currentStreamIndex: Int = 0
     private var streamReferer: String = ""
-    private var streamTitle: String = "Vibe Stream"
+    private var streamTitle: String = "Now Playing"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isZoomMode = false
@@ -81,7 +76,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
 
-        streamTitle = intent.getStringExtra(EXTRA_TITLE) ?: "Vibe Stream"
+        streamTitle = intent.getStringExtra(EXTRA_TITLE) ?: "Now Playing"
         streamUrls = intent.getStringArrayListExtra(EXTRA_STREAM_URLS) ?: emptyList()
         streamNames = intent.getStringArrayListExtra(EXTRA_STREAM_NAMES) ?: emptyList()
         streamReferer = intent.getStringExtra(EXTRA_REFERER) ?: ""
@@ -104,6 +99,8 @@ class PlayerActivity : AppCompatActivity() {
         tvPlayerTitle = findViewById(R.id.tv_player_title)
         tvPlayerStats = findViewById(R.id.tv_player_stats)
         btnOsdPlayPause = findViewById(R.id.btn_osd_play_pause)
+        btnOsdRew = findViewById(R.id.btn_osd_rew)
+        btnOsdFfwd = findViewById(R.id.btn_osd_ffwd)
         btnOsdSwitchSource = findViewById(R.id.btn_osd_switch_source)
         btnOsdAspect = findViewById(R.id.btn_osd_aspect)
         tvPosition = findViewById(R.id.tv_position)
@@ -116,12 +113,20 @@ class PlayerActivity : AppCompatActivity() {
             togglePlayPause()
         }
 
+        btnOsdRew.setOnClickListener {
+            seekRelativeMs(-10_000L)
+        }
+
+        btnOsdFfwd.setOnClickListener {
+            seekRelativeMs(10_000L)
+        }
+
         btnOsdSwitchSource.setOnClickListener {
             if (streamUrls.size > 1) {
                 currentStreamIndex = (currentStreamIndex + 1) % streamUrls.size
                 loadStreamAtIndex(currentStreamIndex)
             } else {
-                Toast.makeText(this, "Only 1 stream mirror available", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Only 1 source available for this title", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -132,12 +137,12 @@ class PlayerActivity : AppCompatActivity() {
             } else {
                 AspectRatioFrameLayout.RESIZE_MODE_FIT
             }
+            btnOsdAspect.text = if (isZoomMode) "Screen: Zoom" else "Screen: Fit"
             resetOsdAutoHideTimer()
         }
     }
 
     private fun initializeLowLatencyPlayer() {
-        // Tuned LoadControl for ultra-fast start and strict RAM cap on Fire TV
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 6_000,
@@ -152,12 +157,10 @@ class PlayerActivity : AppCompatActivity() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        // Prefer Fire TV hardware MediaCodec decoders with automatic fallback
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
 
-        // RAM-only OkHttpDataSource (never writes cache to disk)
         val defaultHeaders = mutableMapOf<String, String>()
         if (streamReferer.isNotEmpty()) {
             defaultHeaders["Referer"] = streamReferer
@@ -181,7 +184,7 @@ class PlayerActivity : AppCompatActivity() {
                         when (playbackState) {
                             Player.STATE_BUFFERING -> {
                                 loadingOverlay.visibility = View.VISIBLE
-                                tvBufferingStatus.text = "Low-Latency RAM Buffer..."
+                                tvBufferingStatus.text = "Loading video..."
                             }
                             Player.STATE_READY -> {
                                 loadingOverlay.visibility = View.GONE
@@ -207,20 +210,14 @@ class PlayerActivity : AppCompatActivity() {
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
-                        // Automatically try next mirror if available
                         if (streamUrls.size > 1 && currentStreamIndex + 1 < streamUrls.size) {
                             currentStreamIndex++
-                            Toast.makeText(
-                                this@PlayerActivity,
-                                "Switching to backup mirror #${currentStreamIndex + 1}...",
-                                Toast.LENGTH_SHORT
-                            ).show()
                             loadStreamAtIndex(currentStreamIndex)
                         } else {
                             loadingOverlay.visibility = View.GONE
                             Toast.makeText(
                                 this@PlayerActivity,
-                                "Stream Error: ${error.errorCodeName}",
+                                "This stream is currently offline. Please try another title.",
                                 Toast.LENGTH_LONG
                             ).show()
                         }
@@ -233,7 +230,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun loadStreamAtIndex(index: Int) {
         val url = streamUrls.getOrNull(index) ?: return
-        val mirrorLabel = streamNames.getOrNull(index) ?: "Mirror #${index + 1}"
+        val mirrorLabel = streamNames.getOrNull(index) ?: "Source #${index + 1}"
 
         val mimeType = when {
             url.contains(".m3u8", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
@@ -254,7 +251,7 @@ class PlayerActivity : AppCompatActivity() {
             mediaItemBuilder.setMimeType(mimeType)
         }
 
-        tvPlayerTitle.text = "$streamTitle — $mirrorLabel"
+        tvPlayerTitle.text = if (streamUrls.size > 1) "$streamTitle ($mirrorLabel)" else streamTitle
         loadingOverlay.visibility = View.VISIBLE
 
         exoPlayer?.apply {
@@ -269,11 +266,11 @@ class PlayerActivity : AppCompatActivity() {
         val player = exoPlayer ?: return
         val format = player.videoFormat
         val res = if (format != null && format.height > 0) {
-            "${format.width}x${format.height}"
+            "${format.height}p HD"
         } else {
-            "Adaptive"
+            "HD"
         }
-        tvPlayerStats.text = "Resolution: $res • RAM Ring-Buffer (600ms Start) • Disk Cache: 0 KB"
+        tvPlayerStats.text = "Quality: $res • Press Left / Right on remote to jump 10 seconds"
     }
 
     private fun updateProgressHud() {
@@ -286,7 +283,7 @@ class PlayerActivity : AppCompatActivity() {
             tvDuration.text = formatTimeMs(dur)
             progressBar.progress = ((pos * 1000L) / dur).toInt().coerceIn(0, 1000)
         } else {
-            tvDuration.text = "LIVE"
+            tvDuration.text = "LIVE TV"
             progressBar.progress = 1000
         }
     }
@@ -331,17 +328,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun resetOsdAutoHideTimer() {
         mainHandler.removeCallbacks(autoHideOsdRunnable)
-        mainHandler.postDelayed(autoHideOsdRunnable, 4000L)
+        mainHandler.postDelayed(autoHideOsdRunnable, 4500L)
     }
 
-    /**
-     * Full Fire TV Remote D-Pad & Media Key Handling:
-     * - DPAD_LEFT / REWIND: -10s
-     * - DPAD_RIGHT / FAST_FORWARD: +10s
-     * - DPAD_CENTER / ENTER / PLAY_PAUSE: Toggle OSD or Play/Pause
-     * - DPAD_UP / DPAD_DOWN / MENU: Show OSD & focus controls
-     * - BACK: Hide OSD if open, otherwise exit and immediately sweep RAM/Disk cache
-     */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
@@ -421,7 +410,6 @@ class PlayerActivity : AppCompatActivity() {
             player.release()
         }
         exoPlayer = null
-        // Strictly wipe any temporary buffers or cache files immediately after watching a video
         ZeroCacheJanitor.purgeAll(applicationContext)
     }
 

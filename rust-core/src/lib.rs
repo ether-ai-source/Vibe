@@ -2,14 +2,13 @@ use jni::objects::{JClass, JString};
 use jni::sys::{jlong, jstring};
 use jni::JNIEnv;
 
-/// Normalizes repository URLs, expands CloudStream shortcodes, and converts raw GitHub links.
+/// Normalizes repository URLs, expands CloudStream shortcodes, and converts GitHub links to raw URLs.
 fn normalize_url_internal(raw: &str) -> String {
     let trimmed = raw.trim().trim_matches('"').trim_matches('\'');
     if trimmed.is_empty() {
         return String::new();
     }
 
-    // Handle cloudstreamrepo:// scheme
     if let Some(rest) = trimmed.strip_prefix("cloudstreamrepo://") {
         if rest.starts_with("http://") || rest.starts_with("https://") {
             return rest.to_string();
@@ -17,18 +16,18 @@ fn normalize_url_internal(raw: &str) -> String {
         return format!("https://{}", rest);
     }
 
-    // Convert github.com/owner/repo/blob/branch/path -> raw.githubusercontent.com/owner/repo/branch/path
     if trimmed.contains("github.com/") && trimmed.contains("/blob/") {
         return trimmed
             .replace("github.com/", "raw.githubusercontent.com/")
             .replace("/blob/", "/");
     }
 
-    // If user entered owner/repo shorthand
     if !trimmed.contains("://")
         && trimmed.matches('/').count() == 1
         && !trimmed.contains(' ')
         && !trimmed.ends_with(".json")
+        && !trimmed.ends_with(".m3u")
+        && !trimmed.ends_with(".m3u8")
     {
         return format!("https://raw.githubusercontent.com/{}/main/repo.json", trimmed);
     }
@@ -40,9 +39,8 @@ fn normalize_url_internal(raw: &str) -> String {
     trimmed.to_string()
 }
 
-/// Zero-dependency, low-memory scanner that extracts playable media URLs (.m3u8, .mpd, .mp4)
-/// from raw HTML, JSON, or obfuscated JavaScript responses.
-/// Returns newline-delimited URLs.
+/// Fast native scanner that extracts playable media URLs (.m3u8, .mpd, .mp4)
+/// from raw HTML, JSON, or JS responses without regex memory overhead.
 fn extract_streams_internal(payload: &str, base_url: &str) -> String {
     let unescaped = payload
         .replace("\\/", "/")
@@ -90,7 +88,7 @@ fn extract_streams_internal(payload: &str, base_url: &str) -> String {
 
                     if is_stream && !found.iter().any(|existing| existing == candidate) {
                         found.push(candidate.to_string());
-                        if found.len() >= 25 {
+                        if found.len() >= 30 {
                             break;
                         }
                     }
@@ -102,7 +100,6 @@ fn extract_streams_internal(payload: &str, base_url: &str) -> String {
         }
     }
 
-    // Also check relative paths if base_url is provided and no absolute URLs matched
     if found.is_empty() && !base_url.is_empty() {
         for token in unescaped.split(|c: char| c == '"' || c == '\'' || c.is_whitespace()) {
             let lower = token.to_ascii_lowercase();
@@ -134,7 +131,6 @@ fn extract_origin(url: &str) -> String {
     String::new()
 }
 
-/// 64-bit FNV-1a deterministic hash for zero-allocation stream/item deduplication.
 fn fnv1a_64(input: &str) -> i64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for b in input.as_bytes() {

@@ -42,7 +42,7 @@ class RepoListAdapter(
         fun bind(repo: RepoConfig, onRemove: (RepoConfig) -> Unit) {
             tvName.text = repo.name
             tvUrl.text = repo.url
-            tvMeta.text = "${repo.repoType} • ${repo.pluginCount} indexed entries"
+            tvMeta.text = "${repo.repoType} • ${repo.pluginCount} channels/items"
 
             if (repo.url.startsWith("builtin://")) {
                 btnRemove.visibility = View.GONE

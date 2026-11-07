@@ -1,9 +1,5 @@
 package com.vibe.tv.core
 
-/**
- * Bridge to the Rust Native Engine (libvibe_core.so).
- * Automatically falls back to lightweight pure-Kotlin implementations if JNI is unavailable.
- */
 object NativeEngine {
 
     var isRustLoaded: Boolean = false
@@ -73,7 +69,13 @@ object NativeEngine {
                 .replace("github.com/", "raw.githubusercontent.com/")
                 .replace("/blob/", "/")
         }
-        if (!trimmed.contains("://") && trimmed.count { it == '/' } == 1 && !trimmed.contains(' ')) {
+        if (!trimmed.contains("://") &&
+            trimmed.count { it == '/' } == 1 &&
+            !trimmed.contains(' ') &&
+            !trimmed.endsWith(".json") &&
+            !trimmed.endsWith(".m3u") &&
+            !trimmed.endsWith(".m3u8")
+        ) {
             return "https://raw.githubusercontent.com/$trimmed/main/repo.json"
         }
         return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
@@ -88,7 +90,10 @@ object NativeEngine {
             .replace("\\/", "/")
             .replace("\\u0026", "&")
             .replace("&amp;", "&")
-        val regex = Regex("""https?://[^\s"'<>`\\]+?\.(?:m3u8|mpd|mp4)(?:\?[^\s"'<>`\\]*)?""", RegexOption.IGNORE_CASE)
-        return regex.findAll(unescaped).map { it.value }.distinct().take(25).toList()
+        val regex = Regex(
+            """https?://[^\s"'<>`\\]+?\.(?:m3u8|mpd|mp4)(?:\?[^\s"'<>`\\]*)?""",
+            RegexOption.IGNORE_CASE
+        )
+        return regex.findAll(unescaped).map { it.value }.distinct().take(30).toList()
     }
 }

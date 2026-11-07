@@ -6,7 +6,7 @@
     android:background="#000000"
     android:keepScreenOn="true">
 
-    <!-- Media3 ExoPlayer Surface -->
+    <!-- Fullscreen Hardware Video Surface -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/player_view"
         android:layout_width="match_parent"
@@ -16,7 +16,7 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
-    <!-- Minimalist Low-Latency Buffering Indicator -->
+    <!-- Clean Loading Indicator -->
     <LinearLayout
         android:id="@+id/loading_overlay"
         android:layout_width="wrap_content"
@@ -25,110 +25,61 @@
         android:background="@drawable/tv_focus_card"
         android:gravity="center"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:paddingHorizontal="28dp"
+        android:paddingVertical="22dp">
 
         <ProgressBar
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
             android:indeterminate="true" />
 
         <TextView
             android:id="@+id/tv_buffering_status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Low-Latency Lock..."
+            android:layout_marginTop="12dp"
+            android:text="Starting video..."
             android:textColor="@color/vibe_text_primary"
-            android:textSize="13sp" />
+            android:textSize="16sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- Custom 10-Foot Fire TV D-Pad OSD (On-Screen Display) -->
+    <!-- Easy-to-Read Senior-Friendly TV Control Bar -->
     <LinearLayout
         android:id="@+id/osd_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="#CC090D16"
+        android:background="#D90A0E17"
         android:orientation="vertical"
-        android:padding="22dp">
+        android:paddingHorizontal="32dp"
+        android:paddingVertical="24dp">
 
+        <TextView
+            android:id="@+id/tv_player_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Now Playing"
+            android:textColor="@color/vibe_text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_player_stats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Use Left / Right on remote to rewind or fast-forward"
+            android:textColor="@color/vibe_text_secondary"
+            android:textSize="15sp" />
+
+        <!-- Progress Bar & Large Timestamps -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/tv_player_title"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:text="Stream Title"
-                    android:textColor="@color/vibe_text_primary"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tv_player_stats"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="RAM BufferOnly • Disk Cache: 0 KB • Direct Hardware Decode"
-                    android:textColor="@color/vibe_emerald"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btn_osd_play_pause"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/tv_focus_button"
-                android:focusable="true"
-                android:paddingHorizontal="16dp"
-                android:text="Pause"
-                android:textAllCaps="false"
-                android:textColor="@color/vibe_text_primary"
-                android:textSize="13sp" />
-
-            <Button
-                android:id="@+id/btn_osd_switch_source"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/tv_focus_button"
-                android:focusable="true"
-                android:paddingHorizontal="16dp"
-                android:text="Switch Mirror"
-                android:textAllCaps="false"
-                android:textColor="@color/vibe_text_primary"
-                android:textSize="13sp" />
-
-            <Button
-                android:id="@+id/btn_osd_aspect"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:background="@drawable/tv_focus_button"
-                android:focusable="true"
-                android:paddingHorizontal="16dp"
-                android:text="Fit / Zoom"
-                android:textAllCaps="false"
-                android:textColor="@color/vibe_text_primary"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <!-- Progress Bar & Timestamps -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="14dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -139,18 +90,19 @@
                 android:fontFamily="monospace"
                 android:text="00:00"
                 android:textColor="@color/vibe_text_primary"
-                android:textSize="13sp" />
+                android:textSize="16sp"
+                android:textStyle="bold" />
 
             <ProgressBar
                 android:id="@+id/player_progress_bar"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="0dp"
-                android:layout_height="8dp"
-                android:layout_marginHorizontal="14dp"
+                android:layout_height="10dp"
+                android:layout_marginHorizontal="16dp"
                 android:layout_weight="1"
                 android:max="1000"
                 android:progress="0"
-                android:progressTint="@color/vibe_accent_bright" />
+                android:progressTint="@color/vibe_focus_ring" />
 
             <TextView
                 android:id="@+id/tv_duration"
@@ -159,7 +111,82 @@
                 android:fontFamily="monospace"
                 android:text="LIVE"
                 android:textColor="@color/vibe_text_secondary"
-                android:textSize="13sp" />
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Large Remote Action Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_osd_play_pause"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/tv_focus_button"
+                android:focusable="true"
+                android:paddingHorizontal="24dp"
+                android:text="Pause"
+                android:textAllCaps="false"
+                android:textColor="@color/vibe_text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btn_osd_rew"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/tv_focus_button"
+                android:focusable="true"
+                android:paddingHorizontal="20dp"
+                android:text="-10s Back"
+                android:textAllCaps="false"
+                android:textColor="@color/vibe_text_primary"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_osd_ffwd"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/tv_focus_button"
+                android:focusable="true"
+                android:paddingHorizontal="20dp"
+                android:text="+10s Forward"
+                android:textAllCaps="false"
+                android:textColor="@color/vibe_text_primary"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_osd_switch_source"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/tv_focus_button"
+                android:focusable="true"
+                android:paddingHorizontal="20dp"
+                android:text="Change Source"
+                android:textAllCaps="false"
+                android:textColor="@color/vibe_text_primary"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_osd_aspect"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:background="@drawable/tv_focus_button"
+                android:focusable="true"
+                android:paddingHorizontal="20dp"
+                android:text="Screen Fit"
+                android:textAllCaps="false"
+                android:textColor="@color/vibe_text_primary"
+                android:textSize="16sp" />
         </LinearLayout>
     </LinearLayout>
 

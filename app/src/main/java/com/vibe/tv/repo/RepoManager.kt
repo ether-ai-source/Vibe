@@ -10,10 +10,6 @@ import com.vibe.tv.model.StreamSource
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Manages external repositories (CloudStream 3 repo.json, plugins.json, M3U playlists, Vibe JSON).
- * Stores only tiny URL strings in SharedPreferences (< 4 KB) so app storage never grows.
- */
 class RepoManager(context: Context) {
 
     private val prefs = context.getSharedPreferences("vibe_repos_prefs", Context.MODE_PRIVATE)
@@ -27,9 +23,9 @@ class RepoManager(context: Context) {
                 val o = arr.getJSONObject(i)
                 list.add(
                     RepoConfig(
-                        name = o.optString("name", "Custom Repo"),
+                        name = o.optString("name", "Added Source"),
                         url = o.optString("url"),
-                        repoType = o.optString("repoType", "CS3"),
+                        repoType = o.optString("repoType", "M3U"),
                         pluginCount = o.optInt("pluginCount", 0)
                     )
                 )
@@ -53,19 +49,16 @@ class RepoManager(context: Context) {
         prefs.edit().putString(KEY_REPOS, arr.toString()).apply()
     }
 
-    /**
-     * Adds and verifies a new repository URL (CloudStream 3 repo.json, plugins.json, M3U, or JSON catalog).
-     */
-    fun addRepositoryUrl(rawInputUrl: String): RepoConfig {
+    fun addRepositoryUrl(rawInputUrl: String, customName: String = ""): RepoConfig {
         val normalized = NativeEngine.normalizeUrl(rawInputUrl)
         if (normalized.isEmpty()) {
-            throw IllegalArgumentException("Invalid repository URL")
+            throw IllegalArgumentException("Please enter a valid link")
         }
 
         val current = getSavedRepos().toMutableList()
         val existingIdx = current.indexOfFirst { it.url.equals(normalized, ignoreCase = true) }
 
-        val inspected = inspectRemoteRepository(normalized)
+        val inspected = inspectRemoteRepository(normalized, customName)
         if (existingIdx != -1) {
             current[existingIdx] = inspected
         } else {
@@ -80,28 +73,25 @@ class RepoManager(context: Context) {
         saveRepos(updated)
     }
 
-    /**
-     * Inspects a remote URL to determine whether it is a CloudStream 3 repo.json,
-     * a direct CloudStream plugins.json list, an M3U playlist, or a Vibe JSON catalog.
-     */
-    private fun inspectRemoteRepository(url: String): RepoConfig {
+    private fun inspectRemoteRepository(url: String, customName: String = ""): RepoConfig {
         return try {
             val body = LowLatencyHttp.fetchText(url).trim()
             when {
                 body.startsWith("#EXTM3U", ignoreCase = true) || url.endsWith(".m3u", true) || url.endsWith(".m3u8", true) -> {
-                    val items = ExtractorEngine.parseM3uPlaylist(body, "M3U Playlist")
+                    val items = ExtractorEngine.parseM3uPlaylist(body, customName.ifEmpty { "Live TV Source" })
                     RepoConfig(
-                        name = url.substringAfterLast('/').substringBefore('?').ifEmpty { "M3U Playlist" },
+                        name = customName.ifEmpty {
+                            url.substringAfterLast('/').substringBefore('?').ifEmpty { "Live TV Playlist" }
+                        },
                         url = url,
-                        repoType = "M3U",
+                        repoType = "Live TV / M3U",
                         pluginCount = items.size
                     )
                 }
                 body.startsWith("{") -> {
                     val obj = JSONObject(body)
                     if (obj.has("pluginLists")) {
-                        // Standard CloudStream 3 repo.json
-                        val name = obj.optString("name", "CloudStream 3 Repo")
+                        val name = customName.ifEmpty { obj.optString("name", "CloudStream 3 Repo") }
                         val lists = obj.optJSONArray("pluginLists") ?: JSONArray()
                         var totalPlugins = 0
                         for (i in 0 until lists.length()) {
@@ -110,13 +100,14 @@ class RepoManager(context: Context) {
                                 totalPlugins += fetchCs3PluginsList(pluginListUrl, name).size
                             }
                         }
-                        RepoConfig(name = name, url = url, repoType = "CS3", pluginCount = totalPlugins)
+                        RepoConfig(name = name, url = url, repoType = "CloudStream 3", pluginCount = totalPlugins)
                     } else {
-                        val items = ExtractorEngine.parseVibeJsonCatalog(body, obj.optString("name", "Vibe JSON Repo"))
+                        val repoTitle = customName.ifEmpty { obj.optString("name", "Stream Catalog") }
+                        val items = ExtractorEngine.parseVibeJsonCatalog(body, repoTitle)
                         RepoConfig(
-                            name = obj.optString("name", "JSON Stream Repo"),
+                            name = repoTitle,
                             url = url,
-                            repoType = "VIBE_JSON",
+                            repoType = "Stream Catalog",
                             pluginCount = items.size
                         )
                     }
@@ -126,49 +117,46 @@ class RepoManager(context: Context) {
                     val first = arr.optJSONObject(0)
                     if (first != null && (first.has("internalName") || first.has("apiVersion"))) {
                         RepoConfig(
-                            name = "CS3 Plugins Index",
+                            name = customName.ifEmpty { "CloudStream 3 Plugins" },
                             url = url,
-                            repoType = "CS3_PLUGINS",
+                            repoType = "CloudStream 3",
                             pluginCount = arr.length()
                         )
                     } else {
                         RepoConfig(
-                            name = "JSON Stream Feed",
+                            name = customName.ifEmpty { "Stream Catalog" },
                             url = url,
-                            repoType = "VIBE_JSON",
+                            repoType = "Stream Catalog",
                             pluginCount = arr.length()
                         )
                     }
                 }
                 else -> {
                     RepoConfig(
-                        name = url.substringAfter("://").substringBefore('/'),
+                        name = customName.ifEmpty { url.substringAfter("://").substringBefore('/') },
                         url = url,
-                        repoType = "WEB_EXTRACTOR",
+                        repoType = "Direct Web Source",
                         pluginCount = 1
                     )
                 }
             }
         } catch (_: Throwable) {
             RepoConfig(
-                name = url.substringAfterLast('/').ifEmpty { "External Repo" },
+                name = customName.ifEmpty { url.substringAfterLast('/').ifEmpty { "Added Source" } },
                 url = url,
-                repoType = "CS3",
+                repoType = "External Source",
                 pluginCount = 0
             )
         }
     }
 
-    /**
-     * Fetches all MediaCardItems across all configured repositories + built-in low-latency showcase streams.
-     */
     fun fetchAllCatalogItems(): List<MediaCardItem> {
         val allItems = mutableListOf<MediaCardItem>()
 
-        // 1. Built-in verified low-latency HLS & MP4 streams for instant Fire TV testing
-        allItems.addAll(getBuiltInLowLatencyStreams())
+        // 1. Built-in movies, shows, and live channels ready to watch immediately
+        allItems.addAll(getBuiltInCuratedStreams())
 
-        // 2. Fetch from user-configured repositories
+        // 2. Fetch from added repositories
         for (repo in getSavedRepos()) {
             if (repo.url.startsWith("builtin://")) continue
             try {
@@ -209,9 +197,10 @@ class RepoManager(context: Context) {
                             allItems.add(
                                 MediaCardItem(
                                     id = NativeEngine.computeIdHash(streamUrl),
-                                    title = "${repo.name} Stream #${idx + 1}",
-                                    subtitle = streamUrl,
-                                    badge = if (streamUrl.contains(".m3u8", true)) "HLS" else "DIRECT",
+                                    title = "${repo.name} #${idx + 1}",
+                                    subtitle = "Press OK to Watch",
+                                    badge = "STREAM",
+                                    category = "MOVIES",
                                     providerName = repo.name,
                                     streams = listOf(StreamSource(name = repo.name, url = streamUrl))
                                 )
@@ -241,7 +230,7 @@ class RepoManager(context: Context) {
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val status = o.optInt("status", 1)
-            if (status == 0) continue // Skip disabled plugins
+            if (status == 0) continue
 
             val tvTypesArr = o.optJSONArray("tvTypes")
             val types = mutableListOf<String>()
@@ -253,12 +242,12 @@ class RepoManager(context: Context) {
 
             list.add(
                 Cs3PluginMeta(
-                    name = o.optString("name", o.optString("internalName", "CS3 Provider")),
-                    internalName = o.optString("internalName", "Provider"),
+                    name = o.optString("name", o.optString("internalName", "Source")),
+                    internalName = o.optString("internalName", "Source"),
                     url = o.optString("url"),
                     tvTypes = types,
                     repositoryName = repoName,
-                    description = o.optString("description", types.joinToString(", ").ifEmpty { "CloudStream 3 Provider" })
+                    description = o.optString("description", types.joinToString(", ").ifEmpty { "CloudStream 3 Source" })
                 )
             )
         }
@@ -266,12 +255,13 @@ class RepoManager(context: Context) {
     }
 
     private fun Cs3PluginMeta.toMediaCardItem(): MediaCardItem {
-        val badgeText = tvTypes.firstOrNull()?.uppercase()?.take(6) ?: "CS3"
+        val badgeText = tvTypes.firstOrNull()?.uppercase()?.take(8) ?: "SOURCE"
         return MediaCardItem(
             id = NativeEngine.computeIdHash("$repositoryName:$internalName:$url"),
             title = name,
-            subtitle = description.ifEmpty { "CloudStream 3 Provider • $repositoryName" },
+            subtitle = description.ifEmpty { "From $repositoryName" },
             badge = badgeText,
+            category = "REPOS",
             providerName = repositoryName,
             streams = emptyList(),
             pageOrPluginUrl = url
@@ -281,88 +271,140 @@ class RepoManager(context: Context) {
     private fun getDefaultStarterRepos(): List<RepoConfig> {
         return listOf(
             RepoConfig(
-                name = "Vibe Open 4K & HLS Core",
+                name = "Vibe Built-In Movies & Live TV",
                 url = "builtin://vibe-core-streams",
-                repoType = "BUILTIN",
-                pluginCount = 6
+                repoType = "Built-In",
+                pluginCount = 9
             )
         )
     }
 
-    private fun getBuiltInLowLatencyStreams(): List<MediaCardItem> {
+    private fun getBuiltInCuratedStreams(): List<MediaCardItem> {
         return listOf(
             MediaCardItem(
                 id = 1001L,
-                title = "Tears of Steel (Adaptive HLS)",
-                subtitle = "1080p Adaptive Bitrate • Low-Latency Test Stream",
-                badge = "HLS",
-                providerName = "Vibe Core",
+                title = "Tears of Steel (Sci-Fi Movie)",
+                subtitle = "Full HD Sci-Fi Short Film • Instant Start",
+                badge = "MOVIE",
+                category = "MOVIES",
+                providerName = "Ready to Play",
                 streams = listOf(
                     StreamSource(
-                        name = "Unified Streaming HLS",
+                        name = "Adaptive HD",
                         url = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
-                        quality = "1080p HLS",
+                        quality = "1080p",
                         isM3u8 = true
                     ),
                     StreamSource(
-                        name = "Direct MP4 Mirror",
+                        name = "Backup Mirror",
                         url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-                        quality = "1080p MP4",
+                        quality = "1080p",
                         isM3u8 = false
                     )
                 )
             ),
             MediaCardItem(
                 id = 1002L,
-                title = "Sintel (4K / 1080p Multi-Audio HLS)",
-                subtitle = "Apple Advanced BIPBOP / Sintel HLS Manifest",
-                badge = "HLS",
-                providerName = "Vibe Core",
+                title = "Sintel (Fantasy Adventure Movie)",
+                subtitle = "Award-Winning Animated Feature • Multi-Audio HD",
+                badge = "MOVIE",
+                category = "MOVIES",
+                providerName = "Ready to Play",
                 streams = listOf(
                     StreamSource(
-                        name = "Bitmovin HLS",
+                        name = "Primary HD",
                         url = "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8",
-                        quality = "1080p HLS",
+                        quality = "1080p",
                         isM3u8 = true
                     ),
                     StreamSource(
-                        name = "Direct MP4 Fallback",
+                        name = "Backup Mirror",
                         url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
-                        quality = "720p MP4",
+                        quality = "720p",
                         isM3u8 = false
                     )
                 )
             ),
             MediaCardItem(
                 id = 1003L,
-                title = "Big Buck Bunny (60fps Low-Latency HLS)",
-                subtitle = "Mux Global CDN • Instant 0.6s Startup Test",
-                badge = "HLS 60FPS",
-                providerName = "Vibe Core",
+                title = "Big Buck Bunny (Family Comedy)",
+                subtitle = "60fps Full HD • Family & Kids",
+                badge = "MOVIE",
+                category = "MOVIES",
+                providerName = "Ready to Play",
                 streams = listOf(
                     StreamSource(
-                        name = "Mux Low-Latency CDN",
+                        name = "Primary 60fps HD",
                         url = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-                        quality = "1080p HLS",
+                        quality = "1080p",
                         isM3u8 = true
                     ),
                     StreamSource(
-                        name = "Direct MP4 Mirror",
+                        name = "Backup Mirror",
                         url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-                        quality = "1080p MP4",
+                        quality = "1080p",
                         isM3u8 = false
                     )
                 )
             ),
             MediaCardItem(
                 id = 1004L,
-                title = "Cosmos Laundromat (Blender Open Movie)",
-                subtitle = "High-Bitrate Direct Stream • Zero Disk Cache",
-                badge = "HLS / MP4",
-                providerName = "Vibe Core",
+                title = "Red Bull TV (Live Sports & Adventure)",
+                subtitle = "24/7 Live Action, Motorsports & Outdoor Events",
+                badge = "LIVE TV",
+                category = "LIVE",
+                providerName = "Live Channel",
                 streams = listOf(
                     StreamSource(
-                        name = "Direct Fast Start",
+                        name = "Red Bull Live HD",
+                        url = "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8",
+                        quality = "1080p Live",
+                        isM3u8 = true
+                    )
+                )
+            ),
+            MediaCardItem(
+                id = 1005L,
+                title = "NASA TV Public (Live Space Station)",
+                subtitle = "24/7 Live Earth Views & Space Missions",
+                badge = "LIVE TV",
+                category = "LIVE",
+                providerName = "Live Channel",
+                streams = listOf(
+                    StreamSource(
+                        name = "NASA Official Live",
+                        url = "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8",
+                        quality = "HD Live",
+                        isM3u8 = true
+                    )
+                )
+            ),
+            MediaCardItem(
+                id = 1006L,
+                title = "DW English (24/7 World News Live)",
+                subtitle = "International Live News & Documentaries",
+                badge = "LIVE TV",
+                category = "LIVE",
+                providerName = "Live Channel",
+                streams = listOf(
+                    StreamSource(
+                        name = "DW Live HD",
+                        url = "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8",
+                        quality = "HD Live",
+                        isM3u8 = true
+                    )
+                )
+            ),
+            MediaCardItem(
+                id = 1007L,
+                title = "Cosmos Laundromat (Comedy / Drama)",
+                subtitle = "Blender Open Cinema • High Definition",
+                badge = "MOVIE",
+                category = "MOVIES",
+                providerName = "Ready to Play",
+                streams = listOf(
+                    StreamSource(
+                        name = "Direct HD",
                         url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
                         quality = "1080p",
                         isM3u8 = false
@@ -370,14 +412,15 @@ class RepoManager(context: Context) {
                 )
             ),
             MediaCardItem(
-                id = 1005L,
-                title = "Elephants Dream (Open Cinema HD)",
-                subtitle = "Hardware Decoder Stress & Seek Test",
-                badge = "DIRECT",
-                providerName = "Vibe Core",
+                id = 1008L,
+                title = "Elephants Dream (Sci-Fi Classic)",
+                subtitle = "Remastered Open Movie • Instant Playback",
+                badge = "MOVIE",
+                category = "MOVIES",
+                providerName = "Ready to Play",
                 streams = listOf(
                     StreamSource(
-                        name = "Google Cloud CDN",
+                        name = "Direct HD",
                         url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
                         quality = "1080p",
                         isM3u8 = false
@@ -385,17 +428,18 @@ class RepoManager(context: Context) {
                 )
             ),
             MediaCardItem(
-                id = 1006L,
-                title = "fMP4 Multi-Bitrate Live Simulation",
-                subtitle = "Apple Authoring Spec fMP4 HLS Stream",
-                badge = "LIVE HLS",
-                providerName = "Vibe Core",
+                id = 1009L,
+                title = "We Are Going On Bullrun (Documentary)",
+                subtitle = "Automotive Rally Documentary Special",
+                badge = "MOVIE",
+                category = "MOVIES",
+                providerName = "Ready to Play",
                 streams = listOf(
                     StreamSource(
-                        name = "Apple fMP4 HLS",
-                        url = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
-                        quality = "Auto HLS",
-                        isM3u8 = true
+                        name = "Direct HD",
+                        url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
+                        quality = "720p",
+                        isM3u8 = false
                     )
                 )
             )
@@ -403,6 +447,8 @@ class RepoManager(context: Context) {
     }
 
     companion object {
-        private const val KEY_REPOS = "saved_repos_v1"
+        private const val KEY_REPOS = "saved_repos_v2"
+        const val PRESET_IPTV_ENG_URL = "https://iptv-org.github.io/iptv/languages/eng.m3u"
+        const val PRESET_IPTV_MOVIES_URL = "https://iptv-org.github.io/iptv/categories/movies.m3u"
     }
 }

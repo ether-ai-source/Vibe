@@ -3,7 +3,7 @@ package com.vibe.tv.model
 data class StreamSource(
     val name: String,
     val url: String,
-    val quality: String = "Auto",
+    val quality: String = "HD",
     val isM3u8: Boolean = url.contains(".m3u8", ignoreCase = true),
     val referer: String = "",
     val headers: Map<String, String> = emptyMap()
@@ -13,7 +13,8 @@ data class MediaCardItem(
     val id: Long,
     val title: String,
     val subtitle: String,
-    val badge: String,
+    val badge: String, // "MOVIE", "LIVE TV", "SOURCE"
+    val category: String, // "MOVIES", "LIVE", "REPOS"
     val providerName: String,
     val streams: List<StreamSource>,
     val pageOrPluginUrl: String = ""
@@ -22,7 +23,7 @@ data class MediaCardItem(
 data class RepoConfig(
     val name: String,
     val url: String,
-    val repoType: String, // "CS3", "M3U", "VIBE_JSON"
+    val repoType: String,
     val pluginCount: Int = 0
 )
 

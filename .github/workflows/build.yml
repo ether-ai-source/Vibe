@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -24,15 +27,33 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK & NDK
-        uses: android-actions/setup-android@v3
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | sort -V | tail -n 1)
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install Rust & Android NDK Targets
+          NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$NDK_DIR" ]; then
+            "$SDKMANAGER" "ndk;26.3.11579264"
+            NDK_DIR="$ANDROID_HOME/ndk/26.3.11579264"
+          fi
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> $GITHUB_ENV
+
+      - name: Install Rust & Android Targets
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: armv7-linux-androideabi,aarch64-linux-android
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+        uses: taiki-e/install-action@cargo-ndk
 
       - name: Compile Rust Native Engine (Fire TV 32-bit & 64-bit)
         working-directory: rust-core
@@ -49,7 +70,7 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build Release & Debug APKs
-        run: gradle assembleRelease assembleDebug --stacktrace
+        run: gradle assembleRelease assembleDebug --no-daemon --stacktrace
 
       - name: Upload Vibe Release APK (Fire TV Optimized)
         uses: actions/upload-artifact@v4

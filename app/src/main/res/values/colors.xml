@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="vibe_bg">#0A0E17</color>
-    <color name="vibe_surface">#141C2B</color>
-    <color name="vibe_surface_focused">#1E293B</color>
-    <color name="vibe_accent">#4F46E5</color>
-    <color name="vibe_focus_ring">#FACC15</color>
+    <color name="vibe_bg">#07090E</color>
+    <color name="vibe_surface">#121622</color>
+    <color name="vibe_surface_focused">#1F263A</color>
+    <color name="vibe_netflix_red">#E50914</color>
+    <color name="vibe_accent">#E50914</color>
+    <color name="vibe_focus_ring">#FFFFFF</color>
     <color name="vibe_emerald">#10B981</color>
     <color name="vibe_rose">#F43F5E</color>
-    <color name="vibe_text_primary">#FFFFFF</color>
-    <color name="vibe_text_secondary">#CBD5E1</color>
+    <color name="vibe_text_primary">#F8FAFC</color>
+    <color name="vibe_text_secondary">#94A3B8</color>
 </resources>

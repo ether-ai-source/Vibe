@@ -7,6 +7,8 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -17,8 +19,11 @@ import androidx.recyclerview.widget.RecyclerView
 import com.vibe.tv.R
 import com.vibe.tv.core.LowLatencyHttp
 import com.vibe.tv.core.NativeEngine
+import com.vibe.tv.core.RamImageLoader
 import com.vibe.tv.core.ZeroCacheJanitor
+import com.vibe.tv.model.Cs3PluginMeta
 import com.vibe.tv.model.MediaCardItem
+import com.vibe.tv.model.RepoConfig
 import com.vibe.tv.model.StreamSource
 import com.vibe.tv.player.PlayerActivity
 import com.vibe.tv.repo.ExtractorEngine
@@ -36,15 +41,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var repoManager: RepoManager
 
     private lateinit var btnNavWatch: Button
+    private lateinit var btnNavIndian: Button
+    private lateinit var btnNavLive: Button
     private lateinit var btnNavSearch: Button
     private lateinit var btnNavSources: Button
     private lateinit var tvStatusHint: TextView
 
-    private lateinit var categoryBar: LinearLayout
-    private lateinit var btnCatAll: Button
-    private lateinit var btnCatMovies: Button
-    private lateinit var btnCatLive: Button
-    private lateinit var btnCatRepos: Button
+    private lateinit var heroBannerContainer: FrameLayout
+    private lateinit var ivHeroBackdrop: ImageView
+    private lateinit var tvHeroBadge: TextView
+    private lateinit var tvHeroMeta: TextView
+    private lateinit var tvHeroTitle: TextView
+    private lateinit var tvHeroDesc: TextView
+    private lateinit var tvRowHeader: TextView
 
     private lateinit var searchBarContainer: LinearLayout
     private lateinit var etSearchQuery: EditText
@@ -53,9 +62,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var rvMediaGrid: RecyclerView
     private lateinit var panelRepositories: LinearLayout
-    private lateinit var btnPresetIptv: Button
-    private lateinit var btnPresetMovies: Button
-    private lateinit var btnReloadSources: Button
+    private lateinit var tvRepoPanelTitle: TextView
+    private lateinit var btnBackToRepos: Button
+    private lateinit var repoInputBar: LinearLayout
     private lateinit var etRepoUrl: EditText
     private lateinit var btnAddRepo: Button
     private lateinit var rvReposList: RecyclerView
@@ -69,9 +78,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Silently purge any cache on launch
         ZeroCacheJanitor.purgeAll(applicationContext)
-
         setContentView(R.layout.activity_main)
         repoManager = RepoManager(applicationContext)
 
@@ -85,11 +92,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Automatically clean all temporary memory/cache when returning from video playback
         ZeroCacheJanitor.purgeAll(applicationContext)
     }
 
     override fun onDestroy() {
+        RamImageLoader.clearRamCache()
         ZeroCacheJanitor.purgeAll(applicationContext)
         uiScope.cancel()
         super.onDestroy()
@@ -97,15 +104,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun bindViews() {
         btnNavWatch = findViewById(R.id.btn_nav_watch)
+        btnNavIndian = findViewById(R.id.btn_nav_indian)
+        btnNavLive = findViewById(R.id.btn_nav_live)
         btnNavSearch = findViewById(R.id.btn_nav_search)
         btnNavSources = findViewById(R.id.btn_nav_sources)
         tvStatusHint = findViewById(R.id.tv_status_hint)
 
-        categoryBar = findViewById(R.id.category_bar)
-        btnCatAll = findViewById(R.id.btn_cat_all)
-        btnCatMovies = findViewById(R.id.btn_cat_movies)
-        btnCatLive = findViewById(R.id.btn_cat_live)
-        btnCatRepos = findViewById(R.id.btn_cat_repos)
+        heroBannerContainer = findViewById(R.id.hero_banner_container)
+        ivHeroBackdrop = findViewById(R.id.iv_hero_backdrop)
+        tvHeroBadge = findViewById(R.id.tv_hero_badge)
+        tvHeroMeta = findViewById(R.id.tv_hero_meta)
+        tvHeroTitle = findViewById(R.id.tv_hero_title)
+        tvHeroDesc = findViewById(R.id.tv_hero_desc)
+        tvRowHeader = findViewById(R.id.tv_row_header)
 
         searchBarContainer = findViewById(R.id.search_bar_container)
         etSearchQuery = findViewById(R.id.et_search_query)
@@ -114,34 +125,47 @@ class MainActivity : AppCompatActivity() {
 
         rvMediaGrid = findViewById(R.id.rv_media_grid)
         panelRepositories = findViewById(R.id.panel_repositories)
-        btnPresetIptv = findViewById(R.id.btn_preset_iptv)
-        btnPresetMovies = findViewById(R.id.btn_preset_movies)
-        btnReloadSources = findViewById(R.id.btn_reload_sources)
+        tvRepoPanelTitle = findViewById(R.id.tv_repo_panel_title)
+        btnBackToRepos = findViewById(R.id.btn_back_to_repos)
+        repoInputBar = findViewById(R.id.repo_input_bar)
         etRepoUrl = findViewById(R.id.et_repo_url)
         btnAddRepo = findViewById(R.id.btn_add_repo)
         rvReposList = findViewById(R.id.rv_repos_list)
     }
 
     private fun setupAdapters() {
-        mediaAdapter = MediaCardAdapter { item ->
-            onMediaCardSelected(item)
-        }
-        rvMediaGrid.layoutManager = GridLayoutManager(this, 3)
+        mediaAdapter = MediaCardAdapter(
+            onItemFocused = { item -> updateNetflixHeroBanner(item) },
+            onItemClick = { item -> onMediaCardSelected(item) }
+        )
+        rvMediaGrid.layoutManager = GridLayoutManager(this, 4)
         rvMediaGrid.adapter = mediaAdapter
 
-        repoAdapter = RepoListAdapter { repoToRemove ->
-            repoManager.removeRepository(repoToRemove.url)
-            refreshRepoListUi()
-            syncAllRepositories()
-            Toast.makeText(this, "Removed ${repoToRemove.name}", Toast.LENGTH_SHORT).show()
-        }
+        repoAdapter = RepoListAdapter(
+            onOpenRepoExtensions = { repo -> openExtensionsInsideRepo(repo) },
+            onRemoveRepoClick = { repoToRemove ->
+                repoManager.removeRepository(repoToRemove.url)
+                refreshRepoListUi()
+                syncAllRepositories()
+                Toast.makeText(this, "Removed ${repoToRemove.name}", Toast.LENGTH_SHORT).show()
+            },
+            onToggleExtensionClick = { ext -> handleExtensionAction(ext) }
+        )
         rvReposList.layoutManager = LinearLayoutManager(this)
         rvReposList.adapter = repoAdapter
     }
 
     private fun setupListeners() {
         btnNavWatch.setOnClickListener {
-            showWatchSection()
+            showWatchSection("ALL", "Featured & Trending (1080p / 4K)")
+        }
+
+        btnNavIndian.setOnClickListener {
+            showWatchSection("INDIAN", "Indian Releases, Regional Providers & Live Channels")
+        }
+
+        btnNavLive.setOnClickListener {
+            showWatchSection("LIVE", "Live Television HD Channels")
         }
 
         btnNavSearch.setOnClickListener {
@@ -152,18 +176,17 @@ class MainActivity : AppCompatActivity() {
             showSourcesSection()
         }
 
-        btnCatAll.setOnClickListener { filterByCategory("ALL") }
-        btnCatMovies.setOnClickListener { filterByCategory("MOVIES") }
-        btnCatLive.setOnClickListener { filterByCategory("LIVE") }
-        btnCatRepos.setOnClickListener { filterByCategory("REPOS") }
+        btnBackToRepos.setOnClickListener {
+            refreshRepoListUi()
+        }
 
         btnExecuteSearch.setOnClickListener {
-            handleSearchOrDirectPlay()
+            handleIntelligentSearch()
         }
 
         btnClearSearch.setOnClickListener {
             etSearchQuery.setText("")
-            filterByCategory("ALL")
+            showWatchSection("ALL", "Featured & Trending (1080p / 4K)")
         }
 
         etSearchQuery.setOnEditorActionListener { _, actionId, event ->
@@ -171,81 +194,138 @@ class MainActivity : AppCompatActivity() {
                 actionId == EditorInfo.IME_ACTION_DONE ||
                 (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
             ) {
-                handleSearchOrDirectPlay()
+                handleIntelligentSearch()
                 true
             } else {
                 false
             }
         }
 
-        btnPresetIptv.setOnClickListener {
-            addNewRepository(RepoManager.PRESET_IPTV_ENG_URL, "World Live TV (English)")
-        }
-
-        btnPresetMovies.setOnClickListener {
-            addNewRepository(RepoManager.PRESET_IPTV_MOVIES_URL, "Public Movie Channels")
-        }
-
-        btnReloadSources.setOnClickListener {
-            syncAllRepositories()
-            showWatchSection()
-        }
-
         btnAddRepo.setOnClickListener {
             val rawUrl = etRepoUrl.text.toString().trim()
             if (rawUrl.isEmpty()) {
-                Toast.makeText(this, "Please enter a link or use a Quick-Add button above", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "Type megarepo, phisherrepo, cnc, csx, or a repo URL",
+                    Toast.LENGTH_SHORT
+                ).show()
                 return@setOnClickListener
             }
             addNewRepository(rawUrl)
         }
     }
 
-    private fun showWatchSection() {
+    private fun updateNetflixHeroBanner(item: MediaCardItem) {
+        tvHeroBadge.text = item.badge
+        tvHeroMeta.text = "${item.providerName} • ${item.subtitle}"
+        tvHeroTitle.text = item.title
+        tvHeroDesc.text = item.synopsis.ifEmpty {
+            "Press OK on your Fire TV remote to stream '${item.title}' in 1080p / 4K HD."
+        }
+        val heroImage = item.backdropUrl.ifEmpty { item.posterUrl }
+        RamImageLoader.load(ivHeroBackdrop, heroImage, targetWidthPx = 960)
+    }
+
+    private fun showWatchSection(category: String, headerTitle: String) {
         panelRepositories.visibility = View.GONE
         searchBarContainer.visibility = View.GONE
-        categoryBar.visibility = View.VISIBLE
+        heroBannerContainer.visibility = View.VISIBLE
+        tvRowHeader.visibility = View.VISIBLE
         rvMediaGrid.visibility = View.VISIBLE
-        filterByCategory(activeCategory)
+        tvRowHeader.text = headerTitle
+        filterByCategory(category)
     }
 
     private fun showSearchSection() {
         panelRepositories.visibility = View.GONE
-        categoryBar.visibility = View.GONE
+        heroBannerContainer.visibility = View.GONE
         searchBarContainer.visibility = View.VISIBLE
+        tvRowHeader.visibility = View.VISIBLE
         rvMediaGrid.visibility = View.VISIBLE
+        tvRowHeader.text = "Intelligent Search (Indian & Global Movies, Series & Installed Repos)"
         etSearchQuery.requestFocus()
-        tvStatusHint.text = "Search by name or paste any video link"
     }
 
     private fun showSourcesSection() {
         rvMediaGrid.visibility = View.GONE
-        categoryBar.visibility = View.GONE
+        heroBannerContainer.visibility = View.GONE
+        tvRowHeader.visibility = View.GONE
         searchBarContainer.visibility = View.GONE
         panelRepositories.visibility = View.VISIBLE
         refreshRepoListUi()
-        tvStatusHint.text = "Add CloudStream 3 or Live TV sources"
-        btnPresetIptv.requestFocus()
+        etRepoUrl.requestFocus()
     }
 
     private fun filterByCategory(category: String) {
         activeCategory = category
         val filtered = when (category) {
-            "MOVIES" -> allCatalogItems.filter { it.category == "MOVIES" }
-            "LIVE" -> allCatalogItems.filter { it.category == "LIVE" }
-            "REPOS" -> allCatalogItems.filter { it.providerName != "Ready to Play" && it.providerName != "Live Channel" }
+            "INDIAN" -> allCatalogItems.filter {
+                it.category == "INDIAN" ||
+                    it.providerName.contains("India", true) ||
+                    it.providerName.contains("Phisher", true) ||
+                    it.providerName.contains("CNC", true) ||
+                    it.providerName.contains("CSX", true)
+            }
+            "LIVE" -> allCatalogItems.filter {
+                it.category == "LIVE" || it.badge.contains("LIVE", true)
+            }
             else -> allCatalogItems
         }
         mediaAdapter.submitList(filtered)
-        tvStatusHint.text = "Showing ${filtered.size} titles • Press OK on remote to watch"
+        filtered.firstOrNull()?.let { updateNetflixHeroBanner(it) }
+        tvStatusHint.text = "${filtered.size} Titles Ready"
     }
 
     private fun refreshRepoListUi() {
-        repoAdapter.submitList(repoManager.getSavedRepos())
+        tvRepoPanelTitle.text =
+            "Installed Repositories (Click 'Browse / Install' on any Repo to view & install its extensions)"
+        btnBackToRepos.visibility = View.GONE
+        repoInputBar.visibility = View.VISIBLE
+        repoAdapter.submitRepos(repoManager.getSavedRepos())
+    }
+
+    private fun openExtensionsInsideRepo(repo: RepoConfig) {
+        tvRepoPanelTitle.text = "Loading extensions inside ${repo.name}..."
+        btnBackToRepos.visibility = View.VISIBLE
+        repoInputBar.visibility = View.GONE
+
+        uiScope.launch {
+            val extensions = withContext(Dispatchers.IO) {
+                repoManager.fetchExtensionsInsideRepo(repo)
+            }
+            if (extensions.isEmpty()) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "${repo.name} is a direct stream playlist (${repo.pluginCount} streams already on Home screen)",
+                    Toast.LENGTH_LONG
+                ).show()
+                refreshRepoListUi()
+            } else {
+                tvRepoPanelTitle.text = "${repo.name} — ${extensions.size} Extensions / Sub-Repos"
+                repoAdapter.submitExtensions(extensions)
+            }
+        }
+    }
+
+    private fun handleExtensionAction(ext: Cs3PluginMeta) {
+        // If this entry is a sub-repository from MegaRepo, install the sub-repository!
+        if (ext.tvTypes.contains("Sub-Repository") || ext.url.endsWith(".json", true)) {
+            addNewRepository(ext.url, ext.name)
+            return
+        }
+
+        // Toggle plugin enabled/installed state AND try opening it
+        val isNowInstalled = repoManager.togglePluginInstalled(ext.url)
+        Toast.makeText(
+            this,
+            if (isNowInstalled) "Installed & Enabled: ${ext.name}" else "Disabled: ${ext.name}",
+            Toast.LENGTH_SHORT
+        ).show()
+        syncAllRepositories()
     }
 
     private fun addNewRepository(rawUrl: String, customName: String = "") {
-        tvStatusHint.text = "Adding source..."
+        tvStatusHint.text = "Installing $rawUrl..."
         btnAddRepo.isEnabled = false
 
         uiScope.launch {
@@ -257,13 +337,12 @@ class MainActivity : AppCompatActivity() {
                 refreshRepoListUi()
                 Toast.makeText(
                     this@MainActivity,
-                    "Added ${added.name} (${added.pluginCount} items)",
+                    "Installed: ${added.name}",
                     Toast.LENGTH_SHORT
                 ).show()
                 syncAllRepositories()
             } catch (e: Throwable) {
-                Toast.makeText(this@MainActivity, "Could not add link: ${e.message}", Toast.LENGTH_LONG).show()
-                tvStatusHint.text = "Ready"
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             } finally {
                 btnAddRepo.isEnabled = true
                 ZeroCacheJanitor.purgeAll(applicationContext)
@@ -272,7 +351,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun syncAllRepositories() {
-        tvStatusHint.text = "Loading channels & movies..."
+        tvStatusHint.text = "Syncing Indian & Global Repos..."
         uiScope.launch {
             val items = withContext(Dispatchers.IO) {
                 repoManager.fetchAllCatalogItems()
@@ -283,7 +362,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleSearchOrDirectPlay() {
+    private fun handleIntelligentSearch() {
         val query = etSearchQuery.text.toString().trim()
         if (query.isEmpty()) {
             filterByCategory("ALL")
@@ -298,26 +377,36 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val filtered = allCatalogItems.filter {
+        tvRowHeader.text = "Searching Indian & Global Releases for \"$query\"..."
+        val localMatches = allCatalogItems.filter {
             it.title.contains(query, ignoreCase = true) ||
                 it.subtitle.contains(query, ignoreCase = true) ||
                 it.providerName.contains(query, ignoreCase = true)
         }
-        mediaAdapter.submitList(filtered)
-        tvStatusHint.text = "Found ${filtered.size} result(s) for \"$query\""
+        mediaAdapter.submitList(localMatches)
+
+        uiScope.launch {
+            val liveCatalogMatches = withContext(Dispatchers.IO) {
+                ExtractorEngine.searchGlobalAndIndianCatalog(query)
+            }
+            val combined = (localMatches + liveCatalogMatches).distinctBy { it.title + it.subtitle }
+            mediaAdapter.submitList(combined)
+            tvRowHeader.text = "Search Results for \"$query\" (${combined.size} matches)"
+            combined.firstOrNull()?.let { updateNetflixHeroBanner(it) }
+        }
     }
 
     private fun fetchAndPlayDirectUrl(rawUrl: String) {
         val url = NativeEngine.normalizeUrl(rawUrl)
         if (ExtractorEngine.isDirectStreamUrl(url)) {
             launchPlayer(
-                title = url.substringAfterLast('/').substringBefore('?').ifEmpty { "Direct Video" },
-                streams = listOf(StreamSource(name = "Direct Stream", url = url))
+                title = url.substringAfterLast('/').substringBefore('?').ifEmpty { "Direct Stream" },
+                streams = listOf(StreamSource(name = "Direct 1080p", url = url))
             )
             return
         }
 
-        tvStatusHint.text = "Finding video stream on page..."
+        tvStatusHint.text = "Extracting 1080p/4K stream..."
         uiScope.launch {
             val extractedStreams = withContext(Dispatchers.IO) {
                 try {
@@ -325,7 +414,7 @@ class MainActivity : AppCompatActivity() {
                     val links = NativeEngine.extractStreams(html, url)
                     links.mapIndexed { idx, streamUrl ->
                         StreamSource(
-                            name = "Source #${idx + 1}",
+                            name = "Server #${idx + 1}",
                             url = streamUrl,
                             referer = url
                         )
@@ -336,17 +425,13 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (extractedStreams.isNotEmpty()) {
-                launchPlayer(
-                    title = "Direct Stream",
-                    streams = extractedStreams
-                )
+                launchPlayer(title = "Extracted Stream", streams = extractedStreams)
             } else {
                 Toast.makeText(
                     this@MainActivity,
-                    "No playable video found at that link",
+                    "No direct video stream found at that URL",
                     Toast.LENGTH_LONG
                 ).show()
-                tvStatusHint.text = "Ready"
             }
         }
     }
@@ -357,7 +442,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        tvStatusHint.text = "Opening ${item.title}..."
+        tvStatusHint.text = "Fetching highest quality stream for ${item.title}..."
         uiScope.launch {
             val resolved = withContext(Dispatchers.IO) {
                 ExtractorEngine.resolveStreamsForItem(item)
@@ -365,12 +450,21 @@ class MainActivity : AppCompatActivity() {
             if (resolved.isNotEmpty()) {
                 launchPlayer(item.title, resolved)
             } else {
-                Toast.makeText(
-                    this@MainActivity,
-                    "No direct stream found inside '${item.title}'. Try another title or add a Live TV / Movie playlist.",
-                    Toast.LENGTH_LONG
-                ).show()
-                tvStatusHint.text = "Press OK on any title to play"
+                // Fallback: search matching live/repo streams by title keyword
+                val keyword = item.title.split(" ").firstOrNull { it.length > 3 } ?: item.title
+                val fallbackMatch = allCatalogItems.firstOrNull {
+                    it.streams.isNotEmpty() && it.title.contains(keyword, ignoreCase = true)
+                }
+                if (fallbackMatch != null) {
+                    launchPlayer(fallbackMatch.title, fallbackMatch.streams)
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Provider '${item.title}' requires a direct episode/stream link or Live TV channel.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    tvStatusHint.text = "Ready"
+                }
             }
         }
     }

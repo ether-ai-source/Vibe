@@ -12,18 +12,21 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.OptIn
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.vibe.tv.R
@@ -31,6 +34,12 @@ import com.vibe.tv.core.LowLatencyHttp
 import com.vibe.tv.core.ZeroCacheJanitor
 import java.util.Locale
 
+/**
+ * High-Bitrate 1080p / 4K Player for Fire TV:
+ * - Starts with 25 Mbps bandwidth estimate so HLS/DASH immediately picks the 1080p/4K variant
+ *   instead of starting blurry at 240p/360p.
+ * - Includes interactive Quality Selector (Max 4K/1080p, 1080p FHD, 720p HD, 480p).
+ */
 @OptIn(UnstableApi::class)
 class PlayerActivity : AppCompatActivity() {
 
@@ -43,6 +52,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var btnOsdPlayPause: Button
     private lateinit var btnOsdRew: Button
     private lateinit var btnOsdFfwd: Button
+    private lateinit var btnOsdQuality: Button
     private lateinit var btnOsdSwitchSource: Button
     private lateinit var btnOsdAspect: Button
     private lateinit var tvPosition: TextView
@@ -58,6 +68,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isZoomMode = false
+    private var selectedQualityLabel = "Max HD"
 
     private val progressUpdater = object : Runnable {
         override fun run() {
@@ -87,7 +98,7 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         bindViews()
-        initializeLowLatencyPlayer()
+        initializeHighBitratePlayer()
         loadStreamAtIndex(0)
     }
 
@@ -101,6 +112,7 @@ class PlayerActivity : AppCompatActivity() {
         btnOsdPlayPause = findViewById(R.id.btn_osd_play_pause)
         btnOsdRew = findViewById(R.id.btn_osd_rew)
         btnOsdFfwd = findViewById(R.id.btn_osd_ffwd)
+        btnOsdQuality = findViewById(R.id.btn_osd_quality)
         btnOsdSwitchSource = findViewById(R.id.btn_osd_switch_source)
         btnOsdAspect = findViewById(R.id.btn_osd_aspect)
         tvPosition = findViewById(R.id.tv_position)
@@ -109,16 +121,12 @@ class PlayerActivity : AppCompatActivity() {
 
         tvPlayerTitle.text = streamTitle
 
-        btnOsdPlayPause.setOnClickListener {
-            togglePlayPause()
-        }
+        btnOsdPlayPause.setOnClickListener { togglePlayPause() }
+        btnOsdRew.setOnClickListener { seekRelativeMs(-10_000L) }
+        btnOsdFfwd.setOnClickListener { seekRelativeMs(10_000L) }
 
-        btnOsdRew.setOnClickListener {
-            seekRelativeMs(-10_000L)
-        }
-
-        btnOsdFfwd.setOnClickListener {
-            seekRelativeMs(10_000L)
+        btnOsdQuality.setOnClickListener {
+            showQualitySelectorDialog()
         }
 
         btnOsdSwitchSource.setOnClickListener {
@@ -126,7 +134,7 @@ class PlayerActivity : AppCompatActivity() {
                 currentStreamIndex = (currentStreamIndex + 1) % streamUrls.size
                 loadStreamAtIndex(currentStreamIndex)
             } else {
-                Toast.makeText(this, "Only 1 source available for this title", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Only 1 server available for this stream", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -137,24 +145,26 @@ class PlayerActivity : AppCompatActivity() {
             } else {
                 AspectRatioFrameLayout.RESIZE_MODE_FIT
             }
-            btnOsdAspect.text = if (isZoomMode) "Screen: Zoom" else "Screen: Fit"
+            btnOsdAspect.text = if (isZoomMode) "Aspect: Zoom" else "Aspect: Fit"
             resetOsdAutoHideTimer()
         }
     }
 
-    private fun initializeLowLatencyPlayer() {
+    private fun initializeHighBitratePlayer() {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 6_000,
-                /* maxBufferMs = */ 18_000,
-                /* bufferForPlaybackMs = */ 600,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_200
+                /* minBufferMs = */ 8_000,
+                /* maxBufferMs = */ 22_000,
+                /* bufferForPlaybackMs = */ 700,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_400
             )
-            .setBackBuffer(
-                /* backBufferDurationMs = */ 0,
-                /* retainBackBufferFromKeyframe = */ false
-            )
+            .setBackBuffer(0, false)
             .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        // Force 25 Mbps initial bandwidth estimate so ExoPlayer starts at 1080p/4K immediately!
+        val highSpeedBandwidthMeter = DefaultBandwidthMeter.Builder(this)
+            .setInitialBitrateEstimate(25_000_000L)
             .build()
 
         val renderersFactory = DefaultRenderersFactory(this)
@@ -174,9 +184,18 @@ class PlayerActivity : AppCompatActivity() {
 
         exoPlayer = ExoPlayer.Builder(this, renderersFactory)
             .setLoadControl(loadControl)
+            .setBandwidthMeter(highSpeedBandwidthMeter)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
             .also { player ->
+                // Lock TrackSelectionParameters to prefer highest 1080p/4K video & audio tracks
+                player.trackSelectionParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .setMaxVideoSize(3840, 2160)
+                    .setMinVideoSize(1280, 720)
+                    .setMinVideoBitrate(2_500_000)
+                    .build()
+
                 playerView.player = player
                 player.playWhenReady = true
                 player.addListener(object : Player.Listener {
@@ -184,7 +203,7 @@ class PlayerActivity : AppCompatActivity() {
                         when (playbackState) {
                             Player.STATE_BUFFERING -> {
                                 loadingOverlay.visibility = View.VISIBLE
-                                tvBufferingStatus.text = "Loading video..."
+                                tvBufferingStatus.text = "Locking $selectedQualityLabel Stream..."
                             }
                             Player.STATE_READY -> {
                                 loadingOverlay.visibility = View.GONE
@@ -202,6 +221,10 @@ class PlayerActivity : AppCompatActivity() {
                         }
                     }
 
+                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                        updateVideoFormatStats()
+                    }
+
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         btnOsdPlayPause.text = if (isPlaying) "Pause" else "Play"
                         if (isPlaying) {
@@ -210,6 +233,19 @@ class PlayerActivity : AppCompatActivity() {
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        // If strict minVideoSize caused an issue on a stream that only has 480p, relax constraint first
+                        val currentMinHeight = player.trackSelectionParameters.minVideoHeight
+                        if (currentMinHeight > 0) {
+                            player.trackSelectionParameters = player.trackSelectionParameters
+                                .buildUpon()
+                                .clearVideoSizeConstraints()
+                                .setMaxVideoSize(3840, 2160)
+                                .build()
+                            player.prepare()
+                            player.play()
+                            return
+                        }
+
                         if (streamUrls.size > 1 && currentStreamIndex + 1 < streamUrls.size) {
                             currentStreamIndex++
                             loadStreamAtIndex(currentStreamIndex)
@@ -217,7 +253,7 @@ class PlayerActivity : AppCompatActivity() {
                             loadingOverlay.visibility = View.GONE
                             Toast.makeText(
                                 this@PlayerActivity,
-                                "This stream is currently offline. Please try another title.",
+                                "Stream unavailable on this server. Try another source.",
                                 Toast.LENGTH_LONG
                             ).show()
                         }
@@ -228,9 +264,49 @@ class PlayerActivity : AppCompatActivity() {
         mainHandler.post(progressUpdater)
     }
 
+    private fun showQualitySelectorDialog() {
+        val player = exoPlayer ?: return
+        val options = arrayOf(
+            "Auto Max (4K / 1080p Priority)",
+            "1080p Full HD (Force 1920x1080)",
+            "720p HD (Force 1280x720)",
+            "480p Data Saver"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Select Video Streaming Quality")
+            .setItems(options) { _, which ->
+                val builder: TrackSelectionParameters.Builder =
+                    player.trackSelectionParameters.buildUpon().clearVideoSizeConstraints()
+                when (which) {
+                    0 -> {
+                        selectedQualityLabel = "Max 4K/1080p"
+                        builder.setMaxVideoSize(3840, 2160).setMinVideoBitrate(2_500_000)
+                    }
+                    1 -> {
+                        selectedQualityLabel = "1080p FHD"
+                        builder.setMaxVideoSize(1920, 1080).setMinVideoSize(1280, 720)
+                    }
+                    2 -> {
+                        selectedQualityLabel = "720p HD"
+                        builder.setMaxVideoSize(1280, 720).setMinVideoSize(854, 480)
+                    }
+                    3 -> {
+                        selectedQualityLabel = "480p SD"
+                        builder.setMaxVideoSize(854, 480)
+                    }
+                }
+                player.trackSelectionParameters = builder.build()
+                btnOsdQuality.text = "Quality: $selectedQualityLabel"
+                updateVideoFormatStats()
+                resetOsdAutoHideTimer()
+            }
+            .show()
+    }
+
     private fun loadStreamAtIndex(index: Int) {
         val url = streamUrls.getOrNull(index) ?: return
-        val mirrorLabel = streamNames.getOrNull(index) ?: "Source #${index + 1}"
+        val mirrorLabel = streamNames.getOrNull(index) ?: "Server #${index + 1}"
 
         val mimeType = when {
             url.contains(".m3u8", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
@@ -251,7 +327,7 @@ class PlayerActivity : AppCompatActivity() {
             mediaItemBuilder.setMimeType(mimeType)
         }
 
-        tvPlayerTitle.text = if (streamUrls.size > 1) "$streamTitle ($mirrorLabel)" else streamTitle
+        tvPlayerTitle.text = if (streamUrls.size > 1) "$streamTitle • $mirrorLabel" else streamTitle
         loadingOverlay.visibility = View.VISIBLE
 
         exoPlayer?.apply {
@@ -266,11 +342,16 @@ class PlayerActivity : AppCompatActivity() {
         val player = exoPlayer ?: return
         val format = player.videoFormat
         val res = if (format != null && format.height > 0) {
-            "${format.height}p HD"
+            "${format.width}x${format.height} (${format.height}p)"
         } else {
-            "HD"
+            selectedQualityLabel
         }
-        tvPlayerStats.text = "Quality: $res • Press Left / Right on remote to jump 10 seconds"
+        val bitrateMbps = if (format != null && format.bitrate > 0) {
+            String.format(Locale.US, " • %.1f Mbps", format.bitrate / 1_000_000f)
+        } else {
+            ""
+        }
+        tvPlayerStats.text = "Active Stream: $res$bitrateMbps • Zero Disk Cache"
     }
 
     private fun updateProgressHud() {
@@ -283,7 +364,7 @@ class PlayerActivity : AppCompatActivity() {
             tvDuration.text = formatTimeMs(dur)
             progressBar.progress = ((pos * 1000L) / dur).toInt().coerceIn(0, 1000)
         } else {
-            tvDuration.text = "LIVE TV"
+            tvDuration.text = "LIVE HD"
             progressBar.progress = 1000
         }
     }

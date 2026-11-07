@@ -2,11 +2,39 @@ use jni::objects::{JClass, JString};
 use jni::sys::{jlong, jstring};
 use jni::JNIEnv;
 
-/// Normalizes repository URLs, expands CloudStream shortcodes, and converts GitHub links to raw URLs.
+/// Expands CloudStream shortcodes (including megarepo & Indian repos) and normalizes URLs.
 fn normalize_url_internal(raw: &str) -> String {
     let trimmed = raw.trim().trim_matches('"').trim_matches('\'');
     if trimmed.is_empty() {
         return String::new();
+    }
+
+    match trimmed.to_ascii_lowercase().as_str() {
+        "megarepo" | "3737" | "mega" => {
+            return "https://raw.githubusercontent.com/recloudstream/cs-repos/master/repos-db.json".to_string();
+        }
+        "phisherrepo" | "864" | "phisher" => {
+            return "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json".to_string();
+        }
+        "cnc" | "cncverse" => {
+            return "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/refs/heads/builds/CNC.json".to_string();
+        }
+        "csx" | "3670" | "megix" => {
+            return "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CS.json".to_string();
+        }
+        "likdev" | "z7iwuxt" => {
+            return "https://codeberg.org/JakeWasHere7/likdev256-tamil-providers/raw/branch/builds/repo.json".to_string();
+        }
+        "cspr" | "0094" | "official" => {
+            return "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json".to_string();
+        }
+        "hexated" | "n7iqbdm" => {
+            return "https://codeberg.org/Stormunblessed/storm-ext/raw/branch/main/hexa.json".to_string();
+        }
+        "storm" | "l7iwex2" => {
+            return "https://raw.githubusercontent.com/redblacker8/storm-ext/refs/heads/builds/repo.json".to_string();
+        }
+        _ => {}
     }
 
     if let Some(rest) = trimmed.strip_prefix("cloudstreamrepo://") {
@@ -39,8 +67,7 @@ fn normalize_url_internal(raw: &str) -> String {
     trimmed.to_string()
 }
 
-/// Fast native scanner that extracts playable media URLs (.m3u8, .mpd, .mp4)
-/// from raw HTML, JSON, or JS responses without regex memory overhead.
+/// Extracts playable media URLs (.m3u8, .mpd, .mp4) and prioritizes high-resolution streams first.
 fn extract_streams_internal(payload: &str, base_url: &str) -> String {
     let unescaped = payload
         .replace("\\/", "/")
@@ -88,7 +115,7 @@ fn extract_streams_internal(payload: &str, base_url: &str) -> String {
 
                     if is_stream && !found.iter().any(|existing| existing == candidate) {
                         found.push(candidate.to_string());
-                        if found.len() >= 30 {
+                        if found.len() >= 35 {
                             break;
                         }
                     }
@@ -116,6 +143,20 @@ fn extract_streams_internal(payload: &str, base_url: &str) -> String {
             }
         }
     }
+
+    // Sort so master HLS / 4K / 1080p streams appear first
+    found.sort_by_key(|u| {
+        let l = u.to_ascii_lowercase();
+        if l.contains("2160") || l.contains("4k") || l.contains("master.m3u8") {
+            0
+        } else if l.contains("1080") || l.contains(".m3u8") {
+            1
+        } else if l.contains("720") {
+            2
+        } else {
+            3
+        }
+    });
 
     found.join("\n")
 }

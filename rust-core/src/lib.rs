@@ -1,0 +1,197 @@
+use jni::objects::{JClass, JString};
+use jni::sys::{jlong, jstring};
+use jni::JNIEnv;
+
+/// Normalizes repository URLs, expands CloudStream shortcodes, and converts raw GitHub links.
+fn normalize_url_internal(raw: &str) -> String {
+    let trimmed = raw.trim().trim_matches('"').trim_matches('\'');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // Handle cloudstreamrepo:// scheme
+    if let Some(rest) = trimmed.strip_prefix("cloudstreamrepo://") {
+        if rest.starts_with("http://") || rest.starts_with("https://") {
+            return rest.to_string();
+        }
+        return format!("https://{}", rest);
+    }
+
+    // Convert github.com/owner/repo/blob/branch/path -> raw.githubusercontent.com/owner/repo/branch/path
+    if trimmed.contains("github.com/") && trimmed.contains("/blob/") {
+        return trimmed
+            .replace("github.com/", "raw.githubusercontent.com/")
+            .replace("/blob/", "/");
+    }
+
+    // If user entered owner/repo shorthand
+    if !trimmed.contains("://")
+        && trimmed.matches('/').count() == 1
+        && !trimmed.contains(' ')
+        && !trimmed.ends_with(".json")
+    {
+        return format!("https://raw.githubusercontent.com/{}/main/repo.json", trimmed);
+    }
+
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        return format!("https://{}", trimmed);
+    }
+
+    trimmed.to_string()
+}
+
+/// Zero-dependency, low-memory scanner that extracts playable media URLs (.m3u8, .mpd, .mp4)
+/// from raw HTML, JSON, or obfuscated JavaScript responses.
+/// Returns newline-delimited URLs.
+fn extract_streams_internal(payload: &str, base_url: &str) -> String {
+    let unescaped = payload
+        .replace("\\/", "/")
+        .replace("\\u0026", "&")
+        .replace("&amp;", "&");
+
+    let mut found: Vec<String> = Vec::new();
+    let bytes = unescaped.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i + 8 < len {
+        if (bytes[i] == b'h' || bytes[i] == b'H')
+            && bytes[i + 1..].starts_with(b"ttp")
+            && (bytes[i + 4] == b':' || (bytes[i + 4] == b's' && bytes[i + 5] == b':'))
+        {
+            let start = i;
+            let mut end = i;
+            while end < len {
+                let c = bytes[end];
+                if c <= b' '
+                    || c == b'"'
+                    || c == b'\''
+                    || c == b'<'
+                    || c == b'>'
+                    || c == b'`'
+                    || c == b')'
+                    || c == b']'
+                    || c == b'}'
+                    || c == b'\\'
+                {
+                    break;
+                }
+                end += 1;
+            }
+
+            if end > start + 10 {
+                if let Ok(candidate) = std::str::from_utf8(&bytes[start..end]) {
+                    let lower = candidate.to_ascii_lowercase();
+                    let is_stream = lower.contains(".m3u8")
+                        || lower.contains(".mpd")
+                        || lower.contains(".mp4")
+                        || lower.contains("/hls/")
+                        || lower.contains("/manifest");
+
+                    if is_stream && !found.iter().any(|existing| existing == candidate) {
+                        found.push(candidate.to_string());
+                        if found.len() >= 25 {
+                            break;
+                        }
+                    }
+                }
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+
+    // Also check relative paths if base_url is provided and no absolute URLs matched
+    if found.is_empty() && !base_url.is_empty() {
+        for token in unescaped.split(|c: char| c == '"' || c == '\'' || c.is_whitespace()) {
+            let lower = token.to_ascii_lowercase();
+            if (lower.ends_with(".m3u8") || lower.ends_with(".mpd") || lower.ends_with(".mp4"))
+                && token.starts_with('/')
+            {
+                let origin = extract_origin(base_url);
+                if !origin.is_empty() {
+                    let full = format!("{}{}", origin, token);
+                    if !found.contains(&full) {
+                        found.push(full);
+                    }
+                }
+            }
+        }
+    }
+
+    found.join("\n")
+}
+
+fn extract_origin(url: &str) -> String {
+    if let Some(scheme_idx) = url.find("://") {
+        let rest = &url[scheme_idx + 3..];
+        if let Some(slash_idx) = rest.find('/') {
+            return url[..scheme_idx + 3 + slash_idx].to_string();
+        }
+        return url.to_string();
+    }
+    String::new()
+}
+
+/// 64-bit FNV-1a deterministic hash for zero-allocation stream/item deduplication.
+fn fnv1a_64(input: &str) -> i64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in input.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash as i64
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_vibe_tv_core_NativeEngine_normalizeRepoUrl<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input_url: JString<'local>,
+) -> jstring {
+    let raw: String = match env.get_string(&input_url) {
+        Ok(s) => s.into(),
+        Err(_) => String::new(),
+    };
+    let normalized = normalize_url_internal(&raw);
+    match env.new_string(normalized) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_vibe_tv_core_NativeEngine_extractStreamsFromPayload<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    raw_payload: JString<'local>,
+    base_url: JString<'local>,
+) -> jstring {
+    let payload: String = match env.get_string(&raw_payload) {
+        Ok(s) => s.into(),
+        Err(_) => String::new(),
+    };
+    let base: String = match env.get_string(&base_url) {
+        Ok(s) => s.into(),
+        Err(_) => String::new(),
+    };
+    let extracted = extract_streams_internal(&payload, &base);
+    match env.new_string(extracted) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_vibe_tv_core_NativeEngine_fastHash<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input: JString<'local>,
+) -> jlong {
+    let text: String = match env.get_string(&input) {
+        Ok(s) => s.into(),
+        Err(_) => String::new(),
+    };
+    fnv1a_64(&text)
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="vibe_bg">#080B12</color>
+    <color name="vibe_surface">#111827</color>
+    <color name="vibe_surface_elevated">#1E293B</color>
+    <color name="vibe_accent">#6366F1</color>
+    <color name="vibe_accent_bright">#818CF8</color>
+    <color name="vibe_emerald">#10B981</color>
+    <color name="vibe_rose">#F43F5E</color>
+    <color name="vibe_text_primary">#F8FAFC</color>
+    <color name="vibe_text_secondary">#94A3B8</color>
+</resources>

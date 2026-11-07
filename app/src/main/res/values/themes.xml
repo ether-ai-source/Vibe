@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.VibeTV" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/vibe_bg</item>
+        <item name="android:colorBackground">@color/vibe_bg</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="colorPrimary">@color/vibe_accent</item>
+        <item name="colorAccent">@color/vibe_accent_bright</item>
+    </style>
+</resources>

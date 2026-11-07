@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vibe</string>
+    <string name="tagline">Zero-Cache Low-Latency TV Streamer</string>
+</resources>

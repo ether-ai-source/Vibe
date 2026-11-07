@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vibe_bg"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- Top TV Header & Navigation Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="16dp">
+
+        <!-- Brand Title -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="28dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.08"
+                android:text="VIBE"
+                android:textColor="@color/vibe_text_primary"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_engine_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Rust Engine + Zero-Cache"
+                android:textColor="@color/vibe_emerald"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- D-Pad Navigation Buttons -->
+        <Button
+            android:id="@+id/btn_nav_home"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/tv_focus_button"
+            android:focusable="true"
+            android:nextFocusDown="@+id/rv_media_grid"
+            android:paddingHorizontal="18dp"
+            android:text="Home Streams"
+            android:textAllCaps="false"
+            android:textColor="@color/vibe_text_primary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_nav_repos"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/tv_focus_button"
+            android:focusable="true"
+            android:paddingHorizontal="18dp"
+            android:text="Repositories (CS3 / M3U)"
+            android:textAllCaps="false"
+            android:textColor="@color/vibe_text_primary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_nav_direct"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/tv_focus_button"
+            android:focusable="true"
+            android:paddingHorizontal="18dp"
+            android:text="Direct Fetch / URL"
+            android:textAllCaps="false"
+            android:textColor="@color/vibe_text_primary"
+            android:textSize="14sp" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Ephemeral Zero-Cache Badge & Manual Sweep Button -->
+        <Button
+            android:id="@+id/btn_purge_cache"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:background="@drawable/tv_focus_button"
+            android:focusable="true"
+            android:paddingHorizontal="14dp"
+            android:text="Cache: 0 KB (Sweep)"
+            android:textAllCaps="false"
+            android:textColor="@color/vibe_emerald"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Search & Filter Bar -->
+    <LinearLayout
+        android:id="@+id/search_bar_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/et_search_query"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_marginEnd="10dp"
+            android:layout_weight="1"
+            android:background="@drawable/tv_focus_card"
+            android:focusable="true"
+            android:hint="Search streams, CloudStream providers, or paste stream/page URL..."
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:paddingHorizontal="16dp"
+            android:singleLine="true"
+            android:textColor="@color/vibe_text_primary"
+            android:textColorHint="@color/vibe_text_secondary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_execute_search"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/tv_focus_button"
+            android:focusable="true"
+            android:paddingHorizontal="18dp"
+            android:text="Fetch"
+            android:textAllCaps="false"
+            android:textColor="@color/vibe_text_primary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_reload_sources"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:background="@drawable/tv_focus_button"
+            android:focusable="true"
+            android:paddingHorizontal="16dp"
+            android:text="Sync Repos"
+            android:textAllCaps="false"
+            android:textColor="@color/vibe_text_primary"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Status / Active Repo Subtitle -->
+    <TextView
+        android:id="@+id/tv_section_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:text="Loaded Sources — Use Fire TV D-Pad to select and stream with zero disk cache"
+        android:textColor="@color/vibe_text_secondary"
+        android:textSize="13sp" />
+
+    <!-- SECTION 1: Media Grid (Home & Search Results) -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_media_grid"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:descendantFocusability="afterDescendants"
+        android:focusable="true" />
+
+    <!-- SECTION 2: Repository Manager Panel (CloudStream 3 / JSON / M3U Repos) -->
+    <LinearLayout
+        android:id="@+id/panel_repositories"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/et_repo_url"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_marginEnd="10dp"
+                android:layout_weight="1"
+                android:background="@drawable/tv_focus_card"
+                android:focusable="true"
+                android:hint="Add CloudStream 3 repo.json URL, owner/repo, or .m3u/.json playlist URL..."
+                android:imeOptions="actionDone"
+                android:inputType="textUri"
+                android:paddingHorizontal="16dp"
+                android:singleLine="true"
+                android:textColor="@color/vibe_text_primary"
+                android:textColorHint="@color/vibe_text_secondary"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btn_add_repo"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:background="@drawable/tv_focus_button"
+                android:focusable="true"
+                android:paddingHorizontal="20dp"
+                android:text="+ Add Repository"
+                android:textAllCaps="false"
+                android:textColor="@color/vibe_text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_repos_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:descendantFocusability="afterDescendants"
+            android:focusable="true" />
+    </LinearLayout>
+
+</LinearLayout>

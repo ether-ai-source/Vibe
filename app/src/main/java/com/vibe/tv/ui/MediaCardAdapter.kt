@@ -46,7 +46,7 @@ class MediaCardAdapter(
 
             itemView.setOnFocusChangeListener { v, hasFocus ->
                 val scale = if (hasFocus) 1.05f else 1.0f
-                v. elevation = if (hasFocus) 12f else 0f
+                v.elevation = if (hasFocus) 12f else 0f
                 v.animate()
                     .scaleX(scale)
                     .scaleY(scale)
